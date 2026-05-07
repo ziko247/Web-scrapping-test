@@ -1,0 +1,4 @@
+apache-airflow
+requests
+beautifulsoup4
+minio

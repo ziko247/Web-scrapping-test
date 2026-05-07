@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Airflow
+logs/
+data/
+airflow.cfg
+airflow.db
+webserver_config.py
+
+# Docker
+.dockerignore
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Pytest / Testing
+.pytest_cache/
+.coverage
+htmlcov/
