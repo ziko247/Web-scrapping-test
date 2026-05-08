@@ -5,16 +5,15 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator
 
 import requests
 from bs4 import BeautifulSoup
 
-# Ensure the 'dags' folder is in sys.path so we can import our custom utils
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__))))
 from utils.minio_client import upload_json_to_minio
+from utils.kafka_client import send_news_event
 
-# Define default arguments for the DAG
 default_args = {
     'owner': 'data_engineering_team',
     'depends_on_past': False,
@@ -25,117 +24,157 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-# The target URLs to scrape for the architectural PoC
-# We are using a static category page to keep it simple and avoid IP bans.
-TARGET_URLS = [
-    "https://en.hespress.com/category/politics"
-]
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+}
 
-def scrape_articles_task(**kwargs):
-    """
-    Scrapes the target category pages, extracts a small subset of articles,
-    and uploads the raw metadata + HTML to the MinIO raw-data bucket.
-    """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    }
-    
-    total_scraped = 0
+# ---------------------------------------------------------------------------
+# Source configurations
+# Each entry: (source_name, category_name, category_url, scrape_fn)
+# ---------------------------------------------------------------------------
 
-    for category_url in TARGET_URLS:
-        logging.info(f"Initiating scraping for category page: {category_url}")
-        
+def _upload(source_slug: str, document: dict):
+    date_prefix = datetime.now().strftime('%Y/%m/%d')
+    object_name = f"bronze/{source_slug}/{date_prefix}/{uuid.uuid4()}.json"
+    upload_json_to_minio('raw-data', object_name, document)
+    # Stream the event to Kafka
+    send_news_event(document)
+
+
+# ---- Hespress ----------------------------------------------------------------
+
+def scrape_hespress():
+    category_url = "https://fr.hespress.com/politique"
+    logging.info(f"[Hespress] Scraping category page: {category_url}")
+
+    resp = requests.get(category_url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.content, 'html.parser')
+
+    # Collect article links (.html on hespress.com)
+    article_links = []
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if href.endswith('.html') and 'hespress.com' in href and href not in article_links:
+            article_links.append(href)
+        if len(article_links) >= 5:
+            break
+
+    logging.info(f"[Hespress] Found {len(article_links)} articles.")
+    count = 0
+    for url in article_links:
         try:
-            response = requests.get(category_url, headers=headers, timeout=15)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Find the top 3 article links to avoid heavy scraping / IP blocks
-            # Adjust selectors based on Hespress's actual DOM structure
-            article_links = []
-            for h3 in soup.find_all('h3', class_='card-title')[:3]:
-                a_tag = h3.find('a')
-                if a_tag and a_tag.get('href'):
-                    article_links.append(a_tag['href'])
-            
-            # Fallback if the first selector didn't work
-            if not article_links:
-                for a_tag in soup.find_all('a')[:10]:
-                    href = a_tag.get('href', '')
-                    # Heuristic to identify an article link
-                    if '-news' in href or '/politics/' in href:
-                        article_links.append(href)
-                        if len(article_links) >= 3:
-                            break
+            art = requests.get(url, headers=HEADERS, timeout=15)
+            art.raise_for_status()
+            art_soup = BeautifulSoup(art.content, 'html.parser')
 
-            logging.info(f"Found {len(article_links)} articles to scrape from {category_url}")
-            
-            for url in article_links:
-                # Ensure the URL is absolute
-                article_url = url if url.startswith('http') else 'https://en.hespress.com' + url
-                
-                try:
-                    logging.info(f"Scraping article: {article_url}")
-                    art_resp = requests.get(article_url, headers=headers, timeout=15)
-                    art_resp.raise_for_status()
-                    art_soup = BeautifulSoup(art_resp.content, 'html.parser')
-                    
-                    # Extract basic metadata
-                    title_tag = art_soup.find('h1')
-                    title = title_tag.text.strip() if title_tag else "Unknown Title"
-                    
-                    time_tag = art_soup.find('time')
-                    timestamp = time_tag.text.strip() if time_tag else datetime.now().isoformat()
-                    
-                    # Store the raw HTML body (can refine the selector if we only want the article text div)
-                    content_div = art_soup.find('div', class_='article-content')
-                    # If not found, just store the whole body to ensure we don't lose data in Bronze layer
-                    raw_html = str(content_div) if content_div else str(art_soup.find('body'))
-                    
-                    # Prepare the document payload
-                    document = {
-                        "source": "Hespress",
-                        "url": article_url,
-                        "title": title,
-                        "published_at": timestamp,
-                        "scraped_at": datetime.now().isoformat(),
-                        "raw_html": raw_html
-                    }
-                    
-                    # Upload to MinIO
-                    date_prefix = datetime.now().strftime('%Y/%m/%d')
-                    object_name = f"bronze/hespress/{date_prefix}/{uuid.uuid4()}.json"
-                    
-                    upload_json_to_minio('raw-data', object_name, document)
-                    total_scraped += 1
-                    
-                except Exception as inner_e:
-                    logging.error(f"Failed to scrape or upload article at {article_url}: {inner_e}")
-                    # Skip the failing article, do not crash the DAG
-                    continue
-                    
+            title = art_soup.find('h1')
+            author_tag = art_soup.find('span', class_='author') or art_soup.find('a', class_='author') or art_soup.find('div', class_='author')
+            time_tag = art_soup.find('time')
+            content_div = art_soup.find('div', class_='article-content') or art_soup.find('body')
+
+            document = {
+                "source": "Hespress",
+                "country": "Morocco",
+                "url": url,
+                "title": title.text.strip() if title else "Unknown Title",
+                "author": author_tag.text.strip() if author_tag else "Unknown",
+                "category": "politique",
+                "published_at": time_tag.text.strip() if time_tag else datetime.now().isoformat(),
+                "scraped_at": datetime.now().isoformat(),
+                "raw_html": str(content_div),
+            }
+            _upload('hespress', document)
+            count += 1
         except Exception as e:
-            logging.error(f"Failed to fetch category page {category_url}: {e}")
-            # Skip this category but continue if there are others
-            continue
-            
-    logging.info(f"Batch scraping completed. Successfully scraped and uploaded {total_scraped} articles.")
+            logging.error(f"[Hespress] Failed on {url}: {e}")
+    logging.info(f"[Hespress] Uploaded {count} articles.")
+    return count
 
-# Define the DAG
+
+# ---- CNN ---------------------------------------------------------------------
+
+def scrape_cnn():
+    category_url = "https://edition.cnn.com/world"
+    logging.info(f"[CNN] Scraping category page: {category_url}")
+
+    resp = requests.get(category_url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.content, 'html.parser')
+
+    # CNN article links look like /YYYY/MM/DD/world/... or /world/...
+    article_links = []
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        # Make absolute
+        if href.startswith('/'):
+            href = 'https://edition.cnn.com' + href
+        if 'edition.cnn.com' in href and '/20' in href and href not in article_links:
+            article_links.append(href)
+        if len(article_links) >= 5:
+            break
+
+    logging.info(f"[CNN] Found {len(article_links)} articles.")
+    count = 0
+    for url in article_links:
+        try:
+            art = requests.get(url, headers=HEADERS, timeout=15)
+            art.raise_for_status()
+            art_soup = BeautifulSoup(art.content, 'html.parser')
+
+            title_tag = art_soup.find('h1')
+            # CNN author selectors
+            author_tag = (
+                art_soup.find('span', class_='byline__name') or
+                art_soup.find('div', class_='byline__names') or
+                art_soup.find('span', {'data-component': 'byline-name'})
+            )
+            time_tag = art_soup.find('div', class_='timestamp') or art_soup.find('time')
+            content_div = (
+                art_soup.find('div', class_='article__content') or
+                art_soup.find('div', class_='l-container') or
+                art_soup.find('body')
+            )
+
+            document = {
+                "source": "CNN",
+                "country": "USA",
+                "url": url,
+                "title": title_tag.text.strip() if title_tag else "Unknown Title",
+                "author": author_tag.text.strip() if author_tag else "Unknown",
+                "category": "world",
+                "published_at": time_tag.text.strip() if time_tag else datetime.now().isoformat(),
+                "scraped_at": datetime.now().isoformat(),
+                "raw_html": str(content_div),
+            }
+            _upload('cnn', document)
+            count += 1
+        except Exception as e:
+            logging.error(f"[CNN] Failed on {url}: {e}")
+    logging.info(f"[CNN] Uploaded {count} articles.")
+    return count
+
+
+# ---- Main task ---------------------------------------------------------------
+
+def scrape_all_sources(**kwargs):
+    total = 0
+    total += scrape_hespress()
+    total += scrape_cnn()
+    logging.info(f"Batch scraping complete. Total articles uploaded: {total}")
+
+
 with DAG(
     dag_id='batch_scraper_ingestion',
     default_args=default_args,
-    description='Hourly batch scraper for extracting raw news articles into the Data Lake (Bronze)',
-    schedule_interval=timedelta(hours=1),
+    description='Hourly batch scraper for Hespress and CNN → Bronze layer',
+    schedule=timedelta(hours=1),
     catchup=False,
-    tags=['ingestion', 'bronze', 'hespress']
+    tags=['ingestion', 'bronze', 'hespress', 'cnn']
 ) as dag:
-    
+
     scrape_to_minio_task = PythonOperator(
         task_id='scrape_and_upload_to_minio',
-        python_callable=scrape_articles_task,
+        python_callable=scrape_all_sources,
     )
-
-    # If we had more tasks (e.g., triggering a Spark job), we would link them here:
-    # scrape_to_minio_task >> trigger_silver_processing_task

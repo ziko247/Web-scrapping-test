@@ -61,3 +61,34 @@ def upload_json_to_minio(bucket_name: str, object_name: str, data_dict: dict):
     except Exception as e:
         logging.error(f"Unexpected error uploading to MinIO: {e}")
         raise
+
+def list_objects(bucket_name: str, prefix: str):
+    """
+    Lists all object names in a given MinIO bucket with the specified prefix.
+    """
+    client = get_minio_client()
+    try:
+        if not client.bucket_exists(bucket_name):
+            logging.warning(f"Bucket '{bucket_name}' does not exist.")
+            return []
+        
+        objects = client.list_objects(bucket_name, prefix=prefix, recursive=True)
+        return [obj.object_name for obj in objects]
+    except Exception as e:
+        logging.error(f"Error listing objects in {bucket_name}/{prefix}: {e}")
+        raise
+
+def download_json_from_minio(bucket_name: str, object_name: str) -> dict:
+    """
+    Downloads an object from MinIO and parses it as a JSON dictionary.
+    """
+    client = get_minio_client()
+    try:
+        response = client.get_object(bucket_name, object_name)
+        data = response.read().decode('utf-8')
+        response.close()
+        response.release_conn()
+        return json.loads(data)
+    except Exception as e:
+        logging.error(f"Error downloading {object_name} from {bucket_name}: {e}")
+        raise

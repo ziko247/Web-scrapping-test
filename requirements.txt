@@ -1,4 +1,8 @@
-apache-airflow
+apache-airflow==2.9.1
 requests
 beautifulsoup4
 minio
+streamlit
+plotly
+psycopg2-binary
+kafka-python
