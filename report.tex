@@ -1,0 +1,219 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+\usepackage{lastpage}
+\usepackage{tcolorbox}
+
+% --- Configuration ---
+\geometry{a4paper, margin=2.5cm}
+\onehalfspacing
+
+% Couleurs personnalisées
+\definecolor{primary}{RGB}{41, 128, 185}
+\definecolor{secondary}{RGB}{44, 62, 80}
+\definecolor{graycode}{rgb}{0.5,0.5,0.5}
+
+% Configuration de listings (code)
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{primary},
+    stringstyle=\color{orange},
+    commentstyle=\color{graycode},
+    numbers=left,
+    numberstyle=\tiny\color{graycode},
+    stepnumber=1,
+    numbersep=5pt,
+    backgroundcolor=\color{white},
+    showspaces=false,
+    showstringspaces=false,
+    frame=single,
+    rulecolor=\color{secondary},
+    breaklines=true,
+    captionpos=b
+}
+
+% Configuration des en-têtes et pieds de page
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{secondary}{Press Analytics - Projet Big Data}}
+\fancyhead[R]{\textcolor{secondary}{EMSI IADATA}}
+\fancyfoot[C]{\thepage\ / \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Hyperref configuration
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primary,
+    filecolor=magenta,      
+    urlcolor=primary,
+    pdftitle={Rapport de Projet Press Analytics},
+}
+
+% --- Début du document ---
+\begin{document}
+
+% ==========================================
+% PAGE DE GARDE
+% ==========================================
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    {\large \textbf{ÉCOLE MAROCAINE DES SCIENCES DE L'INGÉNIEUR}}\\[0.2cm]
+    {\large FILIÈRE : INGÉNIERIE DE L'INTELLIGENCE ARTIFICIELLE ET DATA (IADATA)}\\[0.5cm]
+    \rule{\linewidth}{0.5mm}\\[1cm]
+    
+    {\Huge \textbf{\textcolor{primary}{RAPPORT DE PROJET}}}\\[0.4cm]
+    {\Large \textbf{ARCHITECTURE DE DONNÉES}}\\[1cm]
+    
+    \begin{tcolorbox}[colback=white!95!primary,colframe=primary,arc=10pt,boxrule=1pt,width=0.9\textwidth,center]
+        \centering
+        \vspace{0.5cm}
+        {\huge \textbf{Press Analytics}}\\[0.3cm]
+        {\large \textit{Plateforme Big Data de Collecte et d'Analyse d'Articles de Presse via l'Architecture Medallion}}
+        \vspace{0.5cm}
+    \end{tcolorbox}
+    
+    \vspace{2cm}
+    
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushleft} \large
+            \textbf{\textcolor{secondary}{Préparé par :}}\\
+            Étudiant IADATA\\
+            EMSI Casablanca
+        \end{flushleft}
+    \end{minipage}
+    \begin{minipage}{0.45\textwidth}
+        \begin{flushright} \large
+            \textbf{\textcolor{secondary}{Sous la direction de :}}\\
+            Professeur de Module\\
+            Architecture de Données
+        \end{flushright}
+    \end{minipage}
+
+    \vfill
+    
+    \rule{\linewidth}{0.5mm}\\[0.4cm]
+    {\large Année Universitaire : 2025 - 2026}\\[0.2cm]
+    {\large Date de remise : 10 Mai 2026}
+\end{titlepage}
+
+\newpage
+
+% ==========================================
+% TABLE DES MATIÈRES
+% ==========================================
+\tableofcontents
+\newpage
+
+% ==========================================
+% INTRODUCTION
+% ==========================================
+\section{Introduction}
+Dans l'ère numérique actuelle, l'information circule à une vitesse sans précédent. Les médias en ligne publient quotidiennement des milliers d'articles, générant une masse de données non structurées extrêmement précieuse. L'enjeu majeur pour les organisations et les analystes n'est plus seulement d'accéder à l'information, mais de savoir l'extraire, la structurer et l'analyser à grande échelle.
+
+Le projet \textbf{Press Analytics} s'inscrit dans cette dynamique. Il vise à mettre en place une plateforme Big Data robuste capable de collecter automatiquement des articles de presse, d'assurer leur qualité et de les transformer en informations actionnables via un tableau de bord décisionnel. Ce rapport détaille la conception technique, les choix d'architecture et l'implémentation de cette solution.
+
+\section{Contexte et Cahier des Charges}
+\subsection{Objectifs du Projet}
+Le cahier des charges défini pour ce projet repose sur plusieurs piliers fondamentaux :
+\begin{itemize}
+    \item \textbf{Automatisation} : Réduction de l'intervention humaine via des pipelines programmés (Batch).
+    \item \textbf{Fiabilité} : Mise en œuvre de contrôles de qualité pour garantir l'intégrité des données.
+    \item \textbf{Évolutivité} : Utilisation d'une architecture distribuée moderne (Medallion).
+    \item \textbf{Consommation Optimisée} : Capacité à fonctionner dans un environnement conteneurisé léger (limite de 4 Go de RAM).
+\end{itemize}
+
+\subsection{Exigences Fonctionnelles}
+\begin{enumerate}
+    \item \textbf{Web Scraping} : Collecte de données sur des sites comme Hespress ou CNN (Titre, Auteur, Contenu, URL).
+    \item \textbf{Stockage Objet} : Utilisation d'un Data Lake pour conserver l'historique brut.
+    \item \textbf{Traitement ETL} : Nettoyage du HTML, normalisation du texte et détection de langue.
+    \item \textbf{Data Warehousing} : Chargement dans une base relationnelle pour l'analyse.
+    \item \textbf{Visualisation} : Présentation des tendances via des graphiques interactifs.
+\end{enumerate}
+
+\section{Architecture Technique et Stack Logicielle}
+\subsection{Infrastructure Conteneurisée}
+La solution est entièrement déployée via \textbf{Docker Compose}, ce qui assure la portabilité et une gestion fine des ressources matérielles. Les services principaux incluent :
+\begin{itemize}
+    \item \textbf{Apache Airflow} : Pour l'orchestration et la planification des workflows (DAGs).
+    \item \textbf{MinIO} : Comme Data Lake compatible S3 pour le stockage objet.
+    \item \textbf{PostgreSQL} : Faisant office de Data Warehouse relationnel.
+    \item \textbf{Python 3} : Langage central pour le scraping et la transformation.
+\end{itemize}
+
+\subsection{Schéma de Flux de Données}
+Le flux suit une logique linéaire orchestrée :
+Scraping $\rightarrow$ MinIO (Bronze) $\rightarrow$ Processing Python $\rightarrow$ MinIO (Silver) $\rightarrow$ Enrichment $\rightarrow$ PostgreSQL (Gold).
+
+\section{Mise en Œuvre de l'Architecture Medallion}
+L'architecture Medallion permet de structurer les données en fonction de leur niveau de maturité et de qualité.
+
+\subsection{Couche Bronze : Données Brutes (Raw)}
+La couche Bronze stocke les données exactement telles qu'elles ont été récupérées.
+\begin{itemize}
+    \item \textbf{Processus} : Le DAG \texttt{batch\_scraper\_ingestion} visite périodiquement les sites sources.
+    \item \textbf{Format} : Fichiers JSON contenant le code HTML brut de l'article pour permettre une ré-analyse ultérieure si nécessaire.
+\end{itemize}
+
+\subsection{Couche Silver : Données Nettoyées (Silver)}
+C'est l'étape de transformation la plus critique. 
+\begin{itemize}
+    \item \textbf{Nettoyage} : Utilisation de \texttt{BeautifulSoup} pour supprimer les balises HTML, scripts et éléments parasites.
+    \item \textbf{Enrichissement} : Détection automatique de la langue via \texttt{langdetect}.
+    \item \textbf{Contrôles de Qualité} : Rejet systématique des articles sans titre ou avec un corps de texte trop court (moins de 100 caractères).
+\end{itemize}
+
+\subsection{Couche Gold : Données Analytiques (Gold)}
+Les données Gold sont prêtes pour la consommation métier.
+\begin{itemize}
+    \item \textbf{Structuration} : Chargement dans une table PostgreSQL \texttt{news\_warehouse}.
+    \item \textbf{Métriques} : Calcul du nombre de mots (\texttt{word\_count}) et horodatage du chargement.
+    \item \textbf{Dédoublonnage} : Utilisation de l'URL comme clé primaire pour assurer l'unicité via une logique d'Upsert.
+\end{itemize}
+
+\section{Qualité, Gouvernance et Maintenance}
+\subsection{Contrôles de Qualité (DQ)}
+Nous avons implémenté trois dimensions de qualité :
+\begin{itemize}
+    \item \textbf{Complétude} : Vérification de la présence des champs obligatoires (Titre, URL).
+    \item \textbf{Validité} : Détection de la langue pour s'assurer que le contenu est exploitable.
+    \item \textbf{Précision} : Filtrage des articles "vides" ou tronqués.
+\end{itemize}
+
+\subsection{Gouvernance des Données}
+La traçabilité est assurée par Airflow. Chaque exécution laisse une empreinte dans les logs, permettant de remonter à la source d'un échec (ex: changement de structure HTML sur le site source). Le stockage dans MinIO permet également un versionnage naturel des données ingérées.
+
+\section{Résultats et Visualisation}
+La phase finale consiste en la visualisation des données via une application \textbf{Streamlit}.
+Le tableau de bord permet aux utilisateurs de :
+\begin{itemize}
+    \item Suivre la croissance du nombre d'articles collectés par source.
+    \item Analyser la distribution thématique et linguistique.
+    \item Comparer la longueur moyenne des articles entre différentes sources.
+\end{itemize}
+
+\section{Conclusion et Perspectives}
+Ce projet a permis de démontrer la faisabilité d'un pipeline Big Data complet sous des contraintes de ressources strictes. L'architecture Medallion offre une flexibilité et une robustesse indispensables pour le traitement de données non structurées.
+
+\textbf{Perspectives d'amélioration :}
+\begin{itemize}
+    \item \textbf{Streaming} : Intégration de Kafka pour une ingestion en temps réel.
+    \item \textbf{NLP Avancé} : Ajout de modèles d'analyse de sentiments (Sentiment Analysis) et de résumé automatique.
+    \item \textbf{Cloud Native} : Migration vers des services managés pour assurer une haute disponibilité et une scalabilité infinie.
+\end{itemize}
+
+\end{document}
